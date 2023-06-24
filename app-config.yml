@@ -1,0 +1,11 @@
+bootstrap_servers: kafka:29092
+input_topic: stream_in_topic
+output_topic: stream_out_topic
+
+# Use one of the api_key if other is not working
+# api_key: f3abe15c03e04488b3ade0a1e5eb1167
+api_key: 85d44512b82d49c29ba61b944c63af6e
+
+news_api_url: https://newsapi.org/v2/everything?q=the&apiKey={api_key}&sortBy=publishedAt&language=en
+checkpoint_location: '/tmp/'
+news_api_request_delay: 60 # seconds

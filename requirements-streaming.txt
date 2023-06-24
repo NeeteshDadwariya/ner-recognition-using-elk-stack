@@ -1,0 +1,4 @@
+kafka-python==2.0.2
+PyYAML==6.0
+pyspark==3.3.2
+spacy==3.5.2

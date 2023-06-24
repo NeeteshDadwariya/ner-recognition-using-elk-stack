@@ -1,0 +1,114 @@
+version: '3'
+services:
+  zookeeper:
+    user: root
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    networks:
+      - docker-network
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    user: root
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    networks:
+      - docker-network
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIR: /tmp/kafka/log
+
+  elasticsearch:
+    user: root
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.0
+    container_name: elasticsearch
+    networks:
+      - docker-network
+    environment:
+      - node.name=elasticsearch
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.0
+    container_name: kibana
+    networks:
+      - docker-network
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+
+  logstash:
+    user: root
+    image: docker.elastic.co/logstash/logstash:7.15.0
+    container_name: logstash
+    networks:
+      - docker-network
+    depends_on:
+      - elasticsearch
+      - kafka
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    command: logstash -f /usr/share/logstash/pipeline/logstash.conf
+
+  ingestion:
+    image: python:3.10
+    container_name: ingestion
+    working_dir: /tmp
+    depends_on:
+      - kafka
+    networks:
+      - docker-network
+    volumes:
+      - ./requirements-ingestion.txt:/tmp/requirements-ingestion.txt
+      - ./ingestion_pipeline.py:/tmp/ingestion_pipeline.py
+      - ./app-config.yml:/tmp/app-config.yml
+    command: bash -c "pip install -r requirements-ingestion.txt && python3 ingestion_pipeline.py" &
+
+  streaming:
+      user: root
+      image: apache/spark-py
+      container_name: streaming
+      working_dir: /tmp
+      depends_on:
+        - kafka
+      networks:
+        - docker-network
+      volumes:
+        - ./requirements-streaming.txt:/tmp/requirements-streaming.txt
+        - ./stream-service.py:/tmp/stream-service.py
+        - ./app-config.yml:/tmp/app-config.yml
+      command: bash -c "pip install -r requirements-streaming.txt && /opt/spark/bin/spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2 stream-service.py" &
+
+
+volumes:
+  elasticsearch-data:
+    driver: local
+
+networks:
+  docker-network:
+    driver: bridge
